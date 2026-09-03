@@ -1,0 +1,8 @@
+{
+  "name": "finrecon-ai",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "mongodb": "^7.6.0"
+  }
+}
