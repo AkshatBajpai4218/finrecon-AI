@@ -31,8 +31,9 @@ services:
   # -------------------------------------------------------------
   # 2. Frontend Static Site (Vite + React Single Page App)
   # -------------------------------------------------------------
-  - type: static
+  - type: web
     name: finrecon-frontend
+    env: static
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
