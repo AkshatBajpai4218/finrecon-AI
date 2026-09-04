@@ -200,16 +200,53 @@ function SmartTableCell({ cell, isHeader, alignment }) {
 }
 
 /**
- * Premium Table Component with copy to clipboard and CSV export actions
+ * Premium Table Component with interactive animations, column sorting, copy to clipboard, and CSV export
  */
 function FormattedTable({ headers, alignments, rows }) {
   const [copied, setCopied] = useState(false);
+  const [sortCol, setSortCol] = useState(null);
+  const [sortAsc, setSortAsc] = useState(true);
+
+  // Toggle sorting on column click
+  const handleSort = (colIdx) => {
+    if (sortCol === colIdx) {
+      if (sortAsc) {
+        setSortAsc(false);
+      } else {
+        setSortCol(null);
+        setSortAsc(true);
+      }
+    } else {
+      setSortCol(colIdx);
+      setSortAsc(true);
+    }
+  };
+
+  // Sort rows if column selected
+  const displayRows = React.useMemo(() => {
+    if (sortCol === null) return rows;
+    const sorted = [...rows];
+    sorted.sort((a, b) => {
+      const valA = cleanText(a[sortCol] || '').toLowerCase();
+      const valB = cleanText(b[sortCol] || '').toLowerCase();
+
+      // Try numeric comparison first
+      const numA = parseFloat(valA.replace(/[₹$,]/g, ''));
+      const numB = parseFloat(valB.replace(/[₹$,]/g, ''));
+      if (!isNaN(numA) && !isNaN(numB)) {
+        return sortAsc ? numA - numB : numB - numA;
+      }
+
+      return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+    });
+    return sorted;
+  }, [rows, sortCol, sortAsc]);
 
   // Copy table formatted as TSV for Excel / Sheets
   const handleCopyTSV = () => {
     try {
       const cleanH = headers.map(cleanText);
-      const cleanR = rows.map((r) => r.map(cleanText));
+      const cleanR = displayRows.map((r) => r.map(cleanText));
       const tsvContent = [cleanH.join('\t'), ...cleanR.map((r) => r.join('\t'))].join('\n');
       navigator.clipboard.writeText(tsvContent);
       setCopied(true);
@@ -232,7 +269,7 @@ function FormattedTable({ headers, alignments, rows }) {
 
       const csvRows = [
         headers.map(escapeCsvCell).join(','),
-        ...rows.map((row) => row.map(escapeCsvCell).join(',')),
+        ...displayRows.map((row) => row.map(escapeCsvCell).join(',')),
       ];
       const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
@@ -248,30 +285,43 @@ function FormattedTable({ headers, alignments, rows }) {
   };
 
   return (
-    <div className="my-3 rounded-xl border border-slate-700/80 bg-slate-900/90 shadow-xl overflow-hidden backdrop-blur-md transition-all">
+    <div className="my-3 rounded-xl border border-slate-700/80 bg-slate-900/90 shadow-xl overflow-hidden backdrop-blur-md transition-all duration-300 hover:border-cyan-500/40 hover:shadow-cyan-950/20 hover:shadow-2xl animate-fade-in-scale">
+      {/* Animated Top Gradient Accent Line */}
+      <div className="h-[2px] w-full bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 animate-gradient-pan opacity-90" />
+
       {/* Table Toolbar Header */}
-      <div className="px-3.5 py-2 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between text-xs gap-3">
+      <div className="px-3.5 py-2.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between text-xs gap-3">
         <div className="flex items-center gap-2">
           <span className="text-cyan-400 font-bold flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider">
-            <span>📊</span>
+            <span className="animate-pulse">📊</span>
             <span>Ledger Table</span>
           </span>
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700">
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700 shadow-inner">
             {rows.length} {rows.length === 1 ? 'record' : 'records'}
           </span>
+          {sortCol !== null && (
+            <span className="text-[10px] text-cyan-400/80 font-mono hidden sm:inline-flex items-center gap-1">
+              <span>Sorted by {cleanText(headers[sortCol])}</span>
+              <span>{sortAsc ? '▲' : '▼'}</span>
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={handleCopyTSV}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-800 hover:bg-slate-750 hover:text-white text-slate-300 border border-slate-700 transition-colors"
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all duration-150 hover:scale-105 active:scale-95 ${
+              copied
+                ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-600 shadow-md shadow-emerald-950/50'
+                : 'bg-slate-800 hover:bg-slate-700 hover:text-white text-slate-300 border border-slate-700'
+            }`}
             title="Copy as Tab-Separated Values for pasting into Excel or Google Sheets"
           >
             {copied ? (
               <>
-                <span className="text-emerald-400 font-bold">✓</span>
-                <span className="text-emerald-400 font-semibold">Copied!</span>
+                <span className="text-emerald-400 font-bold animate-bounce">✓</span>
+                <span className="text-emerald-300 font-semibold">Copied!</span>
               </>
             ) : (
               <>
@@ -283,7 +333,7 @@ function FormattedTable({ headers, alignments, rows }) {
           <button
             type="button"
             onClick={handleDownloadCSV}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-cyan-950/40 hover:bg-cyan-900/50 text-cyan-300 hover:text-cyan-200 border border-cyan-800/60 transition-colors"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 hover:text-white border border-cyan-800/60 transition-all duration-150 hover:scale-105 active:scale-95 shadow-sm"
             title="Download table data as CSV file"
           >
             <span>📥</span>
@@ -297,21 +347,38 @@ function FormattedTable({ headers, alignments, rows }) {
         <table className="w-full text-left border-collapse">
           <thead>
             <tr>
-              {headers.map((h, idx) => (
-                <SmartTableCell
-                  key={idx}
-                  cell={h}
-                  isHeader={true}
-                  alignment={alignments[idx] || 'left'}
-                />
-              ))}
+              {headers.map((h, idx) => {
+                const isSorted = sortCol === idx;
+                const alignClass =
+                  alignments[idx] === 'right'
+                    ? 'text-right'
+                    : alignments[idx] === 'center'
+                    ? 'text-center'
+                    : 'text-left';
+
+                return (
+                  <th
+                    key={idx}
+                    onClick={() => handleSort(idx)}
+                    className={`py-3 px-3.5 text-[11px] font-mono font-bold tracking-wider uppercase text-cyan-400 whitespace-nowrap bg-slate-950/80 border-b border-slate-700/80 select-none cursor-pointer hover:bg-slate-850 hover:text-white transition-colors duration-150 group/th ${alignClass}`}
+                    title="Click to sort column"
+                  >
+                    <div className={`inline-flex items-center gap-1.5 ${alignments[idx] === 'right' ? 'justify-end' : alignments[idx] === 'center' ? 'justify-center' : 'justify-start'}`}>
+                      <span>{renderInlineMarkdown(h)}</span>
+                      <span className={`text-[9px] transition-all duration-150 ${isSorted ? 'text-cyan-300 font-black' : 'text-slate-600 opacity-0 group-hover/th:opacity-100'}`}>
+                        {isSorted ? (sortAsc ? '▲' : '▼') : '↕'}
+                      </span>
+                    </div>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/80">
-            {rows.map((row, rIdx) => (
+            {displayRows.map((row, rIdx) => (
               <tr
                 key={rIdx}
-                className="hover:bg-slate-800/50 transition-colors duration-100 group"
+                className="hover:bg-slate-800/60 hover:translate-x-0.5 transition-all duration-150 group border-b border-slate-800/60 last:border-0"
               >
                 {row.map((cell, cIdx) => (
                   <SmartTableCell
