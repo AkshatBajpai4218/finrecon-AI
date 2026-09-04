@@ -1,17 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import api from '../lib/api';
+import ChatMarkdownRenderer from './ChatMarkdownRenderer';
 
 const EXAMPLE_QUESTIONS = [
-  "Why is today's reconciliation rate low?",
   "Show me transactions above ₹10,000 that failed reconciliation",
+  "Show transactions with amount 7920",
   "What is the biggest exception?",
+  "Why is today's reconciliation rate low?",
 ];
 
 export default function ChatWindow({ batchId }) {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      text: 'Hello! I am your AI Financial Controller. Ask me anything about your reconciled books, match rates, breaks, or high-exposure exceptions.',
+      text: 'Hello! I am your AI Financial Controller. Ask me anything about your reconciled books, match rates, breaks, or high-exposure exceptions. I can provide detailed diagnostic tables for any queries.',
     },
   ]);
   const [input, setInput] = useState('');
@@ -64,7 +66,7 @@ export default function ChatWindow({ batchId }) {
   };
 
   return (
-    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl shadow-2xl flex flex-col h-[580px] overflow-hidden backdrop-blur-md">
+    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl shadow-2xl flex flex-col h-[640px] overflow-hidden backdrop-blur-md">
       {/* Header */}
       <div className="px-5 py-4 border-b border-slate-800 bg-slate-950/80 text-white flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -73,7 +75,7 @@ export default function ChatWindow({ batchId }) {
           </div>
           <div>
             <h3 className="text-sm font-black text-white tracking-tight">Ask Your Books (AI Controller)</h3>
-            <p className="text-[11px] text-slate-400 font-mono">Grounded retrieval over verified ledger records via 120B AI</p>
+            <p className="text-[11px] text-slate-400 font-mono">Grounded retrieval over verified ledger records via 120B AI with Interactive Tables</p>
           </div>
         </div>
         <span className="text-[10px] font-mono font-bold px-3 py-1 rounded-full bg-cyan-950/60 text-cyan-400 border border-cyan-800/80 uppercase">
@@ -106,29 +108,30 @@ export default function ChatWindow({ batchId }) {
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`max-w-xl rounded-2xl p-4 text-xs sm:text-sm leading-relaxed ${
+              className={`rounded-2xl p-4 text-xs sm:text-sm leading-relaxed transition-all ${
                 msg.role === 'user'
-                  ? 'bg-gradient-to-r from-cyan-600 to-blue-700 text-white rounded-br-none shadow-lg shadow-cyan-950/50'
+                  ? 'max-w-xl bg-gradient-to-r from-cyan-600 to-blue-700 text-white rounded-br-none shadow-lg shadow-cyan-950/50'
                   : msg.isError
-                  ? 'bg-rose-950/40 border border-rose-800 text-rose-300 rounded-bl-none'
-                  : 'bg-slate-850 bg-slate-800/80 border border-slate-750 border-slate-700 text-slate-100 rounded-bl-none shadow-lg'
+                  ? 'max-w-xl bg-rose-950/40 border border-rose-800 text-rose-300 rounded-bl-none'
+                  : 'w-full max-w-2xl lg:max-w-3xl bg-slate-850 bg-slate-800/85 border border-slate-700 text-slate-100 rounded-bl-none shadow-xl'
               }`}
             >
-              <div className="flex items-center justify-between mb-1.5 gap-4">
+              <div className="flex items-center justify-between mb-2 gap-4 border-b border-slate-700/60 pb-1.5">
                 <span
-                  className={`text-[10px] font-bold uppercase tracking-wider font-mono ${
+                  className={`text-[10px] font-bold uppercase tracking-wider font-mono flex items-center gap-1.5 ${
                     msg.role === 'user' ? 'text-cyan-200' : 'text-cyan-400'
                   }`}
                 >
-                  {msg.role === 'user' ? 'You (Merchant)' : 'FinRecon AI Controller'}
+                  <span>{msg.role === 'user' ? '👤' : '🤖'}</span>
+                  <span>{msg.role === 'user' ? 'You (Merchant)' : 'FinRecon AI Controller'}</span>
                 </span>
                 {msg.retrievedCount !== undefined && (
-                  <span className="text-[10px] text-slate-400 font-mono">
+                  <span className="text-[10px] text-slate-400 font-mono bg-slate-900/80 px-2 py-0.5 rounded border border-slate-750">
                     Grounded on {msg.retrievedCount} records
                   </span>
                 )}
               </div>
-              <div className="whitespace-pre-wrap font-medium">{msg.text}</div>
+              <ChatMarkdownRenderer content={msg.text} isUser={msg.role === 'user'} />
             </div>
           </div>
         ))}
