@@ -40,76 +40,85 @@ export async function queryBooks(question, batchId, options = {}) {
     query.txnRef = new RegExp(`^${ref}$`, 'i');
   }
 
-  // Exact Amount detection: e.g. "of 7920 rupees", "worth ₹7920", "amount 7920", "for 7920 rs", "7920 rupees"
+  // 1. Amount Threshold Detection (e.g. "above 10000", "above ₹10,000", "greater than 5000", "> 20000", "more than 10000", "over 10000")
+  let isThresholdQuery = false;
+  let thresholdType = null; // 'above' or 'below'
+  let thresholdAmount = null;
+
+  const aboveMatch = qLower.match(/(?:above|greater than|more than|higher than|exceeding|over|>|>=)\s*(?:₹|inr|rs\.?)?\s*([\d,]+(?:\.\d+)?)/i);
+  const belowMatch = qLower.match(/(?:below|less than|smaller than|under|<|<=)\s*(?:₹|inr|rs\.?)?\s*([\d,]+(?:\.\d+)?)/i);
+
+  if (aboveMatch) {
+    const threshold = parseFloat(aboveMatch[1].replace(/,/g, ''));
+    if (!isNaN(threshold) && threshold > 0) {
+      isThresholdQuery = true;
+      thresholdType = 'above';
+      thresholdAmount = threshold;
+      query.$or = [
+        { paymentAmount: { $gte: threshold } },
+        { bankAmount: { $gte: threshold } },
+        { orderAmount: { $gte: threshold } },
+      ];
+    }
+  } else if (belowMatch) {
+    const threshold = parseFloat(belowMatch[1].replace(/,/g, ''));
+    if (!isNaN(threshold) && threshold > 0) {
+      isThresholdQuery = true;
+      thresholdType = 'below';
+      thresholdAmount = threshold;
+      query.$or = [
+        { paymentAmount: { $lte: threshold } },
+        { bankAmount: { $lte: threshold } },
+        { orderAmount: { $lte: threshold } },
+      ];
+    }
+  }
+
+  // 2. Exact Amount Detection: only if NOT a threshold query and NOT a transaction ID query
   let isExactAmountQuery = false;
   let exactTargetAmount = null;
 
-  const exactAmtRegexes = [
-    /(?:of|worth|amount|for|with|value|having)\s*(?:₹|inr|rs\.?)?\s*([\d,]+(?:\.\d+)?)\s*(?:rupees?|rs\.?|inr)?/i,
-    /(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)/i,
-    /\b([\d,]{3,7})\s*(?:rupees?|rs\.?|inr)\b/i,
-    /\btransactions?\s+of\s+([\d,]+(?:\.\d+)?)/i,
-  ];
-
-  for (const reg of exactAmtRegexes) {
-    const match = qLower.match(reg);
-    if (match) {
-      const val = parseFloat(match[1].replace(/,/g, ''));
-      if (!isNaN(val) && val > 0) {
-        exactTargetAmount = val;
-        isExactAmountQuery = true;
-        break;
-      }
-    }
-  }
-
-  // If no prefix matched but there's an isolated 3-6 digit number (e.g. "give my transactions 7920")
-  if (!isExactAmountQuery && !txnIdMatch) {
-    const fallbackNum = qLower.match(/\b(\d{3,6}(?:\.\d+)?)\b/);
-    if (fallbackNum) {
-      const val = parseFloat(fallbackNum[1]);
-      if (!isNaN(val) && val >= 100) {
-        exactTargetAmount = val;
-        isExactAmountQuery = true;
-      }
-    }
-  }
-
-  if (isExactAmountQuery && exactTargetAmount !== null) {
-    // Check payment, bank, or order amounts matching this exact figure (allowing ±1 for decimals/rounding)
-    query.$or = [
-      { paymentAmount: exactTargetAmount },
-      { bankAmount: exactTargetAmount },
-      { orderAmount: exactTargetAmount },
-      { paymentAmount: { $gte: exactTargetAmount - 1, $lte: exactTargetAmount + 1 } },
-      { bankAmount: { $gte: exactTargetAmount - 1, $lte: exactTargetAmount + 1 } },
-      { orderAmount: { $gte: exactTargetAmount - 1, $lte: exactTargetAmount + 1 } },
+  if (!isThresholdQuery && !txnIdMatch) {
+    const exactAmtRegexes = [
+      /(?:of|worth|amount|for|with|value|having)\s*(?:₹|inr|rs\.?)?\s*([\d,]+(?:\.\d+)?)\s*(?:rupees?|rs\.?|inr)?/i,
+      /(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)/i,
+      /\b([\d,]{3,7})\s*(?:rupees?|rs\.?|inr)\b/i,
+      /\btransactions?\s+of\s+([\d,]+(?:\.\d+)?)/i,
     ];
-  } else {
-    // Amount threshold detection: e.g. "above ₹10,000", "greater than 5000", "> 20000"
-    const aboveMatch = qLower.match(/(?:above|greater than|>|over|more than|exceeding)\s*(?:₹|inr|\$)?\s*([\d,]+(?:\.\d+)?)/i);
-    if (aboveMatch) {
-      const threshold = parseFloat(aboveMatch[1].replace(/,/g, ''));
-      if (!isNaN(threshold)) {
-        query.$or = [
-          { paymentAmount: { $gte: threshold } },
-          { bankAmount: { $gte: threshold } },
-          { orderAmount: { $gte: threshold } },
-        ];
+
+    for (const reg of exactAmtRegexes) {
+      const match = qLower.match(reg);
+      if (match) {
+        const val = parseFloat(match[1].replace(/,/g, ''));
+        if (!isNaN(val) && val > 0) {
+          exactTargetAmount = val;
+          isExactAmountQuery = true;
+          break;
+        }
       }
     }
 
-    // Below threshold detection: e.g. "below ₹1,000", "less than 5000", "< 2000", "under 1000"
-    const belowMatch = qLower.match(/(?:below|less than|<|under|smaller than)\s*(?:₹|inr|\$)?\s*([\d,]+(?:\.\d+)?)/i);
-    if (belowMatch) {
-      const threshold = parseFloat(belowMatch[1].replace(/,/g, ''));
-      if (!isNaN(threshold)) {
-        query.$or = [
-          { paymentAmount: { $lte: threshold } },
-          { bankAmount: { $lte: threshold } },
-          { orderAmount: { $lte: threshold } },
-        ];
+    // Fallback isolated number (e.g. "give my transactions 7920")
+    if (!isExactAmountQuery) {
+      const fallbackNum = qLower.match(/\b(\d{3,6}(?:\.\d+)?)\b/);
+      if (fallbackNum) {
+        const val = parseFloat(fallbackNum[1]);
+        if (!isNaN(val) && val >= 100) {
+          exactTargetAmount = val;
+          isExactAmountQuery = true;
+        }
       }
+    }
+
+    if (isExactAmountQuery && exactTargetAmount !== null) {
+      query.$or = [
+        { paymentAmount: exactTargetAmount },
+        { bankAmount: exactTargetAmount },
+        { orderAmount: exactTargetAmount },
+        { paymentAmount: { $gte: exactTargetAmount - 1, $lte: exactTargetAmount + 1 } },
+        { bankAmount: { $gte: exactTargetAmount - 1, $lte: exactTargetAmount + 1 } },
+        { orderAmount: { $gte: exactTargetAmount - 1, $lte: exactTargetAmount + 1 } },
+      ];
     }
   }
 
@@ -140,19 +149,19 @@ export async function queryBooks(question, batchId, options = {}) {
     limit = 5;
   }
 
-  // 2. Execute retrieval
+  // 3. Execute retrieval
   let transactions = await Transaction.find(query).limit(limit).lean();
 
-  // If exact amount or txn ID was searched within active batch and returned 0 results,
-  // fall back to searching across the entire database (in case it belongs to another batch)
-  if (transactions.length === 0 && (isExactAmountQuery || txnIdMatch)) {
+  // If 0 results within active batch and user queried exact amount, txn ID, or threshold,
+  // or user asked for "all transactions", fall back to searching across the entire database
+  if (transactions.length === 0 && (isExactAmountQuery || txnIdMatch || isThresholdQuery || qLower.includes('all transactions'))) {
     const globalQuery = { ...query };
     delete globalQuery.batchId;
     transactions = await Transaction.find(globalQuery).limit(limit).lean();
   }
 
-  // If sorting by highest amount requested
-  if (qLower.includes('biggest') || qLower.includes('highest') || qLower.includes('largest')) {
+  // If threshold query or sorting by highest amount requested, sort descending
+  if (isThresholdQuery || qLower.includes('biggest') || qLower.includes('highest') || qLower.includes('largest')) {
     transactions.sort((a, b) => {
       const amtA = Math.max(a.paymentAmount || 0, a.bankAmount || 0, a.orderAmount || 0);
       const amtB = Math.max(b.paymentAmount || 0, b.bankAmount || 0, b.orderAmount || 0);
@@ -218,8 +227,19 @@ Provide an accurate, grounded answer:`;
 
   if (process.env.GROQ_API_KEY || process.env.ANTHROPIC_API_KEY || client.isMock) {
     try {
-      answer = await client(systemPrompt, userMessage, 512);
-      answer = answer.trim();
+      answer = await client(systemPrompt, userMessage, 2048);
+      answer = answer ? answer.trim() : '';
+
+      // Validate: if LLM response starts a table but is truncated (has pipe but no separator or rows),
+      // fall back to our deterministic generator so the merchant always gets a complete table
+      if (transactions.length > 0 && answer.includes('|')) {
+        const hasSeparator = /\|?\s*:?-+:?\s*\|/.test(answer);
+        const pipeCount = (answer.match(/\|/g) || []).length;
+        if (!hasSeparator || pipeCount < 6) {
+          console.warn('[NLQueryEngine] LLM response contained incomplete/truncated table. Falling back to full structured table.');
+          answer = '';
+        }
+      }
     } catch (err) {
       console.warn(`[NLQueryEngine] LLM query warning: ${err.message}`);
     }
@@ -227,7 +247,24 @@ Provide an accurate, grounded answer:`;
 
   // Deterministic fallback if LLM is unavailable or returned blank
   if (!answer) {
-    if (isExactAmountQuery && exactTargetAmount !== null) {
+    if (isThresholdQuery && thresholdAmount !== null) {
+      if (transactions.length > 0) {
+        const dir = thresholdType === 'above' ? 'above' : 'below';
+        const rows = transactions.map(t => {
+          const p = t.paymentAmount != null ? `₹${t.paymentAmount.toLocaleString('en-IN')}` : 'N/A';
+          const b = t.bankAmount != null ? `₹${t.bankAmount.toLocaleString('en-IN')}` : 'N/A';
+          const o = t.orderAmount != null ? `₹${t.orderAmount.toLocaleString('en-IN')}` : 'N/A';
+          return `| ${t.txnRef} | ${t.status} | ${t.priority} | ${p} | ${b} | ${o} | ${t.explanation || 'Amount matches threshold'} |`;
+        }).join('\n');
+
+        answer = `Found **${transactions.length}** transaction(s) with amount ${dir} **₹${thresholdAmount.toLocaleString('en-IN')}**:\n\n` +
+          `| Reference ID | Status | Priority | Payment Gateway | Bank Amount | Order Value | AI Diagnosis |\n` +
+          `| :--- | :--- | :---: | ---: | ---: | ---: | :--- |\n` +
+          rows;
+      } else {
+        answer = `No transactions with an amount ${thresholdType === 'above' ? 'above' : 'below'} ₹${thresholdAmount.toLocaleString('en-IN')} were found in the current reconciliation ledger.`;
+      }
+    } else if (isExactAmountQuery && exactTargetAmount !== null) {
       if (transactions.length > 0) {
         const rows = transactions.map(t => {
           const p = t.paymentAmount != null ? `₹${t.paymentAmount.toLocaleString('en-IN')}` : 'N/A';
